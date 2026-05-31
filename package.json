@@ -1,6 +1,6 @@
 {
   "name": "@cemoody/pi-crust-ext-terminal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser terminal (PTY) for pi-crust, as a sidebar activity view. Streams a real shell over the realtime gateway.",
   "license": "MIT",
   "author": "cemoody",

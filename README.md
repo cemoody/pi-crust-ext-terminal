@@ -7,7 +7,7 @@ A **browser terminal** for [pi-crust](https://github.com/cemoody/pi-crust), pack
 
 ## Requirements
 
-- pi-crust with the `ctx.server.realtime` extension API (pi-crust ≥ the release that includes PR #219).
+- **pi-crust with the `ctx.server.realtime` extension API.** This shipped in core via PR #219 — you need a pi-crust release **newer than `0.2.2`**. On an older host the extension refuses to activate with a clear error (and the Settings "Add a source" install returns a 400 with that message), rather than half-loading.
 - Node ≥ 22 (for `node-pty`'s prebuilt binaries / native build).
 
 ## Install

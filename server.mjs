@@ -26,6 +26,17 @@ const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024; // 1 MiB
 const TRUNCATION_MARKER = '\r\n[pty: output truncated]\r\n';
 
 export default function activate(prc) {
+  // This extension requires the `ctx.server.realtime` capability (pi-crust core
+  // with PR #219+). On older hosts it is absent — fail with a clear, actionable
+  // message instead of a cryptic "cannot read properties of undefined".
+  if (typeof prc?.server?.realtime?.onConnection !== 'function') {
+    throw new Error(
+      '@cemoody/pi-crust-ext-terminal requires a pi-crust version that provides ' +
+      'ctx.server.realtime (the per-connection Socket.IO API). Your pi-crust is ' +
+      'too old. Please upgrade pi-crust to a release that includes ctx.server.realtime.',
+    );
+  }
+
   // Sidebar entry. The matching web module (web.mjs, declared via piCrust.web)
   // renders the wterm panel; core mounts it as a sidebar activity automatically.
   prc.activity.registerView({ id: 'cemoody.terminal.activity', title: 'Terminal', order: 40 });

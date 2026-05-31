@@ -136,6 +136,15 @@ describe('activate (realtime pty:* protocol via ctx.server.realtime)', () => {
     expect(activities.map((a) => a.title)).toContain('Terminal');
   });
 
+  it('refuses to activate (with a clear message) on a host without ctx.server.realtime', () => {
+    const noRealtime = {
+      activity: { registerView() {} },
+      sessions: { get: async () => undefined },
+      server: {}, // older pi-crust: no realtime capability
+    };
+    expect(() => activate(noRealtime)).toThrow(/requires.*ctx\.server\.realtime/i);
+  });
+
   it('rejects pty:open without a sessionId and for unknown sessions', async () => {
     const { prc, getHandler } = fakeContext();
     activate(prc);
