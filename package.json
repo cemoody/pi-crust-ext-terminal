@@ -1,0 +1,59 @@
+{
+  "name": "@cemoody/pi-crust-ext-terminal",
+  "version": "0.1.0",
+  "description": "Browser terminal (PTY) for pi-crust, as a sidebar activity view. Streams a real shell over the realtime gateway.",
+  "license": "MIT",
+  "author": "cemoody",
+  "type": "module",
+  "main": "./server.mjs",
+  "exports": {
+    ".": "./server.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "server.mjs",
+    "web.mjs",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cemoody/pi-crust-ext-terminal.git"
+  },
+  "homepage": "https://github.com/cemoody/pi-crust-ext-terminal#readme",
+  "bugs": {
+    "url": "https://github.com/cemoody/pi-crust-ext-terminal/issues"
+  },
+  "keywords": [
+    "pi-crust",
+    "pi-crust-extension",
+    "pi.dev",
+    "terminal",
+    "pty"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "piRemoteControl": {
+    "extension": "./server.mjs",
+    "web": "./web.mjs"
+  },
+  "piCrust": {
+    "extension": "./server.mjs",
+    "web": "./web.mjs"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@wterm/dom": "^0.1.9",
+    "esbuild": "^0.24.0",
+    "socket.io-client": "^4.7.5",
+    "vitest": "^2.1.0"
+  },
+  "scripts": {
+    "build": "node scripts/build-web.mjs",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  }
+}
