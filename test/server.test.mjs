@@ -181,3 +181,39 @@ describe('web.mjs bundles + injects wterm CSS', () => {
     expect(web).toContain('pi-crust-ext-terminal-wterm-css');
   });
 });
+
+// The toolbar (Copy / Clear / Restart / Maximize) is part of the rendered
+// panel; assert the bundle ships each control + the maximize/restore behavior.
+describe('web.mjs ships the terminal toolbar', () => {
+  const web = readFileSync(fileURLToPath(new URL('../web.mjs', import.meta.url)), 'utf8');
+
+  it('includes every toolbar button testid', () => {
+    for (const id of ['term-btn-copy', 'term-btn-clear', 'term-btn-restart', 'term-btn-maximize']) {
+      expect(web).toContain(id);
+    }
+  });
+
+  it('wires the maximize (fill-viewport) behavior', () => {
+    // Maximize toggles a full-viewport fixed overlay and exposes a data attr.
+    expect(web).toContain('data-maximized');
+    expect(web).toMatch(/100vh/);
+    expect(web).toMatch(/100vw/);
+    // Esc restores (keydown -> Escape handler).
+    expect(web).toContain('Escape');
+  });
+
+  it('drives Clear through the PTY (Ctrl+L / form-feed)', () => {
+    expect(web).toContain('\\f'); // form-feed sent to the shell on Clear
+  });
+
+  it('renders icon-only buttons styled like the host action buttons', () => {
+    // Icon buttons share a class whose CSS gives the 26px square + subtle hover,
+    // mirroring the host's Fork/Clone buttons.
+    expect(web).toContain('term-toolbar-btn');
+    expect(web).toMatch(/26px/);
+    // Buttons carry accessible titles instead of visible text labels.
+    expect(web).toContain('Copy terminal output');
+    expect(web).toContain('Restart the shell');
+    expect(web).toMatch(/Resize terminal to fill the viewport|Restore terminal size/);
+  });
+});

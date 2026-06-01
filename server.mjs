@@ -39,7 +39,10 @@ export default function activate(prc) {
 
   // Sidebar entry. The matching web module (web.mjs, declared via piCrust.web)
   // renders the wterm panel; core mounts it as a sidebar activity automatically.
-  prc.activity.registerView({ id: 'cemoody.terminal.activity', title: 'Terminal', order: 40 });
+  // `icon` asks the host to use its built-in terminal glyph instead of the
+  // generic extension icon (host support added in pi-crust core; older hosts
+  // simply ignore the field and fall back to the default glyph).
+  prc.activity.registerView({ id: 'cemoody.terminal.activity', title: 'Terminal', icon: 'terminal', order: 40 });
 
   const manager = createPtyManager({ spawn: createNodePtySpawner() });
 

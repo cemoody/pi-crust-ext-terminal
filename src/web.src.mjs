@@ -25,7 +25,7 @@ function ensureWtermStyles() {
   if (document.getElementById(STYLE_ELEMENT_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ELEMENT_ID;
-  style.textContent = wtermCss;
+  style.textContent = wtermCss + '\n' + TOOLBAR_CSS;
   (document.head || document.documentElement).appendChild(style);
 }
 
@@ -41,12 +41,19 @@ export default renderActivity;
 // from the host api when available, else fall back to the first listed session.
 function TerminalActivity({ hostProps }) {
   const React = hostProps.React;
-  const { useEffect, useRef, useState } = React;
+  const { useCallback, useEffect, useRef, useState } = React;
   const hostRef = useRef(null);
+  // Live refs to the active terminal + transport so toolbar buttons can act on
+  // the CURRENT shell without re-subscribing or re-rendering on every change.
+  const termRef = useRef(null);
+  const ptyIdRef = useRef(null);
+  const transportRef = useRef(null);
   const [sessionId, setSessionId] = useState(null);
   const [status, setStatus] = useState('resolving-session');
   const [exit, setExit] = useState(null);
   const [restartNonce, setRestartNonce] = useState(0);
+  const [maximized, setMaximized] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Resolve a session to attach the shell to.
   useEffect(() => {
@@ -68,12 +75,14 @@ function TerminalActivity({ hostProps }) {
     let disposed = false;
     let ptyId = null;
     const transport = createSocketTerminalTransport();
+    transportRef.current = transport;
 
     const term = new WTerm(host, {
       autoResize: true,
       onData: (data) => { if (ptyId) transport.input(ptyId, data); },
       onResize: (cols, rows) => { if (ptyId) transport.resize(ptyId, cols, rows); },
     });
+    termRef.current = term;
 
     const offData = transport.onData((event) => { if (event.ptyId === ptyId) term.write(event.data); });
     const offExit = transport.onExit((event) => { if (event.ptyId === ptyId) setExit({ exitCode: event.exitCode }); });
@@ -83,6 +92,7 @@ function TerminalActivity({ hostProps }) {
       .then((openedPtyId) => {
         if (disposed) { transport.close(openedPtyId); return; }
         ptyId = openedPtyId;
+        ptyIdRef.current = openedPtyId;
         setStatus('connected');
         term.focus();
       })
@@ -95,12 +105,103 @@ function TerminalActivity({ hostProps }) {
       if (ptyId) transport.close(ptyId);
       try { term.destroy(); } catch { /* ignore */ }
       transport.dispose();
+      if (termRef.current === term) termRef.current = null;
+      if (transportRef.current === transport) transportRef.current = null;
+      if (ptyIdRef.current === ptyId) ptyIdRef.current = null;
     };
   }, [sessionId, restartNonce]);
 
+  // After (un)maximizing, the container box changes size; nudge wterm to refit
+  // on the next frame so cols/rows match the new viewport.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return undefined;
+    const id = requestAnimationFrame(() => { try { term.resize(term.cols, term.rows); term.focus(); } catch { /* ignore */ } });
+    return () => cancelAnimationFrame(id);
+  }, [maximized]);
+
+  // Esc leaves the maximized (full-viewport) view.
+  useEffect(() => {
+    if (!maximized) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setMaximized(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [maximized]);
+
+  // --- Toolbar actions -----------------------------------------------------
+  // Maximize: fill the viewport height (your requested button). The panel goes
+  // to a fixed full-viewport box; wterm autoResize + the effect above refit it.
+  const toggleMaximize = useCallback(() => setMaximized((m) => !m), []);
+
+  // Clear: send Ctrl+L (form-feed) to the shell so it redraws a clean screen.
+  // (wterm has no public clear(); driving the PTY keeps scrollback semantics
+  // identical to a real terminal.)
+  const clearScreen = useCallback(() => {
+    const ptyId = ptyIdRef.current;
+    const transport = transportRef.current;
+    if (ptyId && transport) transport.input(ptyId, '\f');
+    termRef.current?.focus?.();
+  }, []);
+
+  // Copy: grab the rendered buffer text and write it to the clipboard.
+  const copyBuffer = useCallback(async () => {
+    const host = hostRef.current;
+    const text = host ? (host.querySelector('.term-grid')?.innerText ?? host.innerText ?? '') : '';
+    const trimmed = String(text).replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+    try {
+      await navigator.clipboard.writeText(trimmed);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch { /* clipboard blocked; ignore */ }
+    termRef.current?.focus?.();
+  }, []);
+
+  // Restart: tear down + relaunch the shell in place.
+  const restartShell = useCallback(() => {
+    setExit(null);
+    setStatus('ready');
+    setRestartNonce((n) => n + 1);
+  }, []);
+
+  const hasSession = status !== 'no-session' && status !== 'resolving-session';
+
+  // Icon-only toolbar, styled to mirror the host's Fork/Clone action buttons:
+  // small (26px) square, borderless, subtle, grouped at the right. The CSS for
+  // the hover/disabled states is injected with the wterm styles.
+  const iconColor = maximized ? 'rgba(212,212,212,0.85)' : undefined;
+  const toolbar = React.createElement(
+    'div',
+    { className: 'pi-crust-ext-terminal-toolbar', role: 'toolbar', 'aria-label': 'Terminal actions' },
+    React.createElement(IconButton, {
+      React, title: copied ? 'Copied' : 'Copy terminal output', testid: 'term-btn-copy',
+      onClick: copyBuffer, disabled: !hasSession, color: iconColor,
+      glyph: copied ? CheckIconPath : CopyIconPath,
+    }),
+    React.createElement(IconButton, {
+      React, title: 'Clear screen (Ctrl+L)', testid: 'term-btn-clear',
+      onClick: clearScreen, disabled: !hasSession, color: iconColor, glyph: ClearIconPath,
+    }),
+    React.createElement(IconButton, {
+      React, title: 'Restart the shell', testid: 'term-btn-restart',
+      onClick: restartShell, disabled: !hasSession, color: iconColor, glyph: RestartIconPath,
+    }),
+    React.createElement(IconButton, {
+      React, title: maximized ? 'Restore terminal size (Esc)' : 'Resize terminal to fill the viewport',
+      testid: 'term-btn-maximize', onClick: toggleMaximize, disabled: !hasSession,
+      'aria-pressed': maximized, color: iconColor,
+      glyph: maximized ? RestoreIconPath : MaximizeIconPath,
+    }),
+  );
+
   return React.createElement(
     'div',
-    { className: 'pi-crust-ext-terminal', role: 'tabpanel', 'aria-label': 'Terminal', style: PANEL_STYLE },
+    {
+      className: `pi-crust-ext-terminal${maximized ? ' is-maximized' : ''}`,
+      role: 'tabpanel', 'aria-label': 'Terminal',
+      'data-maximized': maximized ? 'true' : 'false',
+      style: maximized ? MAXIMIZED_PANEL_STYLE : PANEL_STYLE,
+    },
+    toolbar,
     status === 'no-session'
       ? React.createElement('div', { role: 'status', style: NOTICE_STYLE }, 'Open or create a session to start a terminal.')
       : null,
@@ -112,11 +213,74 @@ function TerminalActivity({ hostProps }) {
           React.createElement('span', null, exit.message ? `Terminal error: ${exit.message}` : `Process exited (code ${exit.exitCode})`),
           React.createElement(
             'button',
-            { type: 'button', onClick: () => { setExit(null); setStatus('ready'); setRestartNonce((n) => n + 1); }, style: BUTTON_STYLE },
+            { type: 'button', onClick: restartShell, style: BUTTON_STYLE },
             'Restart',
           ),
         )
       : null,
+  );
+}
+
+// A small, icon-only square button mirroring the host's Fork/Clone actions:
+// 26px, borderless, transparent, subtle hover (driven by the injected CSS via
+// the `term-toolbar-btn` class). `color` overrides the glyph color (used to
+// lighten icons over the dark maximized background).
+function IconButton({ React, glyph, title, testid, onClick, disabled, color, ...rest }) {
+  return React.createElement(
+    'button',
+    {
+      type: 'button', className: 'term-toolbar-btn', title, 'aria-label': title,
+      'data-testid': testid, onClick, disabled,
+      style: color ? { color } : undefined, ...rest,
+    },
+    React.createElement(
+      'svg',
+      { width: 15, height: 15, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+      glyph(React),
+    ),
+  );
+}
+
+// Inline SVG glyph bodies (line-art, 16x16), matching the host's icon style.
+function CopyIconPath(R) {
+  return R.createElement(R.Fragment, null,
+    R.createElement('rect', { x: 5.5, y: 5.5, width: 8, height: 8, rx: 1.5 }),
+    R.createElement('path', { d: 'M11.5 5.5V4A1.5 1.5 0 0 0 10 2.5H4A1.5 1.5 0 0 0 2.5 4v6A1.5 1.5 0 0 0 4 11.5h1.5' }),
+  );
+}
+function CheckIconPath(R) {
+  return R.createElement('path', { d: 'M3.5 8.5l3 3 6-7' });
+}
+function ClearIconPath(R) {
+  // Eraser/clear: a slash through a box.
+  return R.createElement(R.Fragment, null,
+    R.createElement('rect', { x: 2.5, y: 2.5, width: 11, height: 11, rx: 2 }),
+    R.createElement('path', { d: 'M5 11l6-6' }),
+  );
+}
+function RestartIconPath(R) {
+  // Circular refresh arrow.
+  return R.createElement(R.Fragment, null,
+    R.createElement('path', { d: 'M12.5 5.5A5 5 0 1 0 13 8' }),
+    R.createElement('path', { d: 'M12.5 2.5v3h-3' }),
+  );
+}
+function MaximizeIconPath(R) {
+  // Expand: four corner arrows.
+  return R.createElement(R.Fragment, null,
+    R.createElement('path', { d: 'M6 2.5H2.5V6' }),
+    R.createElement('path', { d: 'M10 2.5h3.5V6' }),
+    R.createElement('path', { d: 'M13.5 10v3.5H10' }),
+    R.createElement('path', { d: 'M2.5 10v3.5H6' }),
+  );
+}
+function RestoreIconPath(R) {
+  // Collapse: four inward corner arrows.
+  return R.createElement(R.Fragment, null,
+    R.createElement('path', { d: 'M2.5 5.5H6V2' }),
+    R.createElement('path', { d: 'M13.5 5.5H10V2' }),
+    R.createElement('path', { d: 'M13.5 10.5H10V14' }),
+    R.createElement('path', { d: 'M2.5 10.5H6V14' }),
   );
 }
 
@@ -172,7 +336,61 @@ function createSocketTerminalTransport() {
 }
 
 const PANEL_STYLE = { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 };
+// Maximized: a fixed full-viewport overlay so the terminal fills the screen
+// regardless of the host's sidebar/panel layout. Esc or the Restore button
+// returns to the inline panel.
+const MAXIMIZED_PANEL_STYLE = {
+  display: 'flex', flexDirection: 'column',
+  position: 'fixed', inset: '0', zIndex: 2147483000,
+  height: '100vh', width: '100vw', minHeight: 0,
+  background: 'var(--term-bg, #1e1e1e)', padding: '8px', boxSizing: 'border-box',
+};
 const HOST_STYLE = { flex: '1 1 auto', minHeight: 0, width: '100%' };
 const NOTICE_STYLE = { padding: '12px', opacity: 0.8 };
 const EXIT_STYLE = { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', borderTop: '1px solid rgba(127,127,127,0.3)' };
 const BUTTON_STYLE = { padding: '4px 12px', cursor: 'pointer' };
+// Toolbar look/behavior live in injected CSS (TOOLBAR_CSS) so we get :hover /
+// :disabled / :focus-visible states that match the host's Fork/Clone buttons.
+const TOOLBAR_CSS = `
+.pi-crust-ext-terminal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* group actions off to the right */
+  gap: 2px;
+  padding: 4px 6px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+.pi-crust-ext-terminal:not(.is-maximized) .pi-crust-ext-terminal-toolbar {
+  border-bottom: 1px solid rgba(127,127,127,0.18);
+}
+.term-toolbar-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: background-color 0.12s ease, opacity 0.12s ease;
+}
+.term-toolbar-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(127,127,127,0.18);
+}
+.term-toolbar-btn[aria-pressed="true"] {
+  opacity: 1;
+  background: rgba(127,127,127,0.22);
+}
+.term-toolbar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.term-toolbar-btn:focus-visible { outline: 0; box-shadow: 0 0 0 2px rgba(90,150,255,0.6); }
+.pi-crust-ext-terminal.is-maximized .term-toolbar-btn:hover:not(:disabled),
+.pi-crust-ext-terminal.is-maximized .term-toolbar-btn[aria-pressed="true"] {
+  background: rgba(255,255,255,0.14);
+}
+`;
