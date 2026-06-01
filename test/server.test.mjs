@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createPtyManager } from '../server.mjs';
 import activate from '../server.mjs';
 
@@ -153,5 +155,29 @@ describe('activate (realtime pty:* protocol via ctx.server.realtime)', () => {
 
     expect(await send('pty:open', {})).toEqual({ ok: false, error: 'pty:open requires a sessionId' });
     expect(await send('pty:open', { sessionId: 'nope' })).toEqual({ ok: false, error: 'unknown session: nope' });
+  });
+});
+
+// Regression: the terminal previously rendered as unstyled proportional text
+// because wterm's REQUIRED stylesheet (.wterm/.term-grid/.term-row) was never
+// loaded. The build must INLINE that CSS into web.mjs and the module must
+// inject it as a <style> tag at runtime.
+describe('web.mjs bundles + injects wterm CSS', () => {
+  const web = readFileSync(fileURLToPath(new URL('../web.mjs', import.meta.url)), 'utf8');
+
+  it('inlines wterm CSS class rules into the bundle', () => {
+    // Core wterm selectors that come ONLY from terminal.css.
+    expect(web).toContain('.term-grid');
+    expect(web).toContain('.term-row');
+    // The terminal palette / monospace declaration proves the full sheet (not
+    // just a class name reference) is present.
+    expect(web).toMatch(/--term-font-family|monospace/);
+    expect(web).toContain('--term-bg');
+  });
+
+  it('injects the stylesheet via a <style> tag at runtime', () => {
+    // The injection helper creates a <style> and appends it to the document.
+    expect(web).toMatch(/createElement\(["']style["']\)/);
+    expect(web).toContain('pi-crust-ext-terminal-wterm-css');
   });
 });

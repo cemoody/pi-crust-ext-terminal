@@ -11,9 +11,27 @@
  */
 import { WTerm } from '@wterm/dom';
 import { io } from 'socket.io-client';
+// wterm's REQUIRED stylesheet, inlined as a string by the build (text loader).
+// Without it the terminal renders as unstyled proportional text — see
+// scripts/build-web.mjs.
+import wtermCss from '@wterm/dom/src/terminal.css';
+
+const STYLE_ELEMENT_ID = 'pi-crust-ext-terminal-wterm-css';
+
+// Inject wterm's CSS once into <head>. Idempotent across mounts/instances and
+// safe if the document isn't ready yet.
+function ensureWtermStyles() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(STYLE_ELEMENT_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ELEMENT_ID;
+  style.textContent = wtermCss;
+  (document.head || document.documentElement).appendChild(style);
+}
 
 export function renderActivity(props) {
   const React = props.React;
+  ensureWtermStyles();
   return React.createElement(TerminalActivity, { hostProps: props });
 }
 
@@ -45,6 +63,7 @@ function TerminalActivity({ hostProps }) {
     if (!sessionId) return undefined;
     const host = hostRef.current;
     if (!host) return undefined;
+    ensureWtermStyles();
 
     let disposed = false;
     let ptyId = null;
