@@ -8,6 +8,9 @@ A **browser terminal** for [pi-crust](https://github.com/cemoody/pi-crust), pack
 ## Requirements
 
 - **pi-crust with the `ctx.server.realtime` extension API.** This shipped in core via PR #219 — you need a pi-crust release **newer than `0.2.2`**. On an older host the extension refuses to activate with a clear error (and the Settings "Add a source" install returns a 400 with that message), rather than half-loading.
+- **Recommended: pi-crust ≥ `0.3.2`.** Earlier releases work, but:
+  - `≥ 0.3.0` is needed to install via Settings without a server restart (older hosts require a restart after install).
+  - `≥ 0.3.2` renders the dedicated **terminal** sidebar glyph; older hosts fall back to the generic extension icon (the terminal still works).
 - Node ≥ 22 (for `node-pty`'s prebuilt binaries / native build).
 
 ## Install
@@ -33,6 +36,13 @@ You can also install from a git URL (`git:https://github.com/cemoody/pi-crust-ex
 ## Usage
 
 After installing, a **Terminal** entry appears in the sidebar. Click it to open a shell bound to the active session's working directory. Closing the tab (or disconnecting) tears the shell down — no orphan processes.
+
+A small toolbar (top-right, styled like the host's action buttons) offers:
+
+- **Copy** — copy the visible terminal buffer to the clipboard.
+- **Clear** — send `Ctrl+L` to redraw a clean screen.
+- **Restart** — tear down and relaunch the shell in place.
+- **Maximize / Restore** — resize the terminal to fill the viewport; press **Esc** or the Restore button to return to the inline panel.
 
 ## How it works
 
